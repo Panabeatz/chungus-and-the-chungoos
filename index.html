@@ -213,12 +213,29 @@ const Audio = (() => {
   })();
 
   // Melodies: arrays of note names, one per 8th-note step.
+  // Friendship theme — "Ey Joonam" (Sami Beigi), transcribed from the piano-cover MIDI.
   const happy = {
-    tempo: 150, // ms per step
-    lead: ['C5','E5','G5','E5','C5','E5','G5','B5','A5','G5','E5','G5','C5','-','G4','-',
-           'D5','F5','A5','F5','D5','F5','A5','C6','B5','A5','F5','A5','D5','-','A4','-'],
-    bass: ['C3','-','G3','-','C3','-','G3','-','C3','-','G3','-','C3','-','G3','-',
-           'F3','-','C4','-','F3','-','C4','-','G3','-','D4','-','G3','-','G3','-']
+    tempo: 200, // ms per 8th-note step (~150 bpm, the song's tempo)
+    lead: [
+    '-','-','-','-','-','-','E5','A4','C4','A4','E5','-','F5','E5','C4','E5',
+    'D5','-','E5','A4','C4','A4','E5','-','G5','F5','F4','F5','E5','-','F5','F5',
+    'F4','F5','G5','F5','G5','G5','B4','A5','F5','E5','D5','D5','E4','D5','C5','D5',
+    'C5','D5','G#4','D5','E5','B3','F5','F5','F5','F5','F5','F5','E5','A4','C4','A4',
+    'E5','-','F5','E5','C4','E5','D5','-','E5','A4','C4','A4','E5','-','G5','F5',
+    'F4','F5','E5','-','F5','F5','F4','F5','G5','F5','G5','D4','B4','D4','-','E5',
+    'D5','D5','E4','D5','C5','D5','C5','D5','G#4','D5','G#4','B3','C5','B4','A4','-',
+    'C4','-','-','-','C4','-','C4','C5','C5','-','B4','A4','C5','-','C5','C5'
+    ],
+    bass: [
+    '-','-','-','-','-','-','A2','E3','-','E3','-','E3','A2','E3','-','E3',
+    '-','E3','A2','E3','-','E3','-','E3','D3','A3','-','A3','-','A3','D3','A3',
+    '-','A3','-','A3','G3','-','-','-','-','-','C3','G3','-','G3','-','G3',
+    'E3','-','-','-','-','-','-','-','-','-','-','-','A2','E3','-','E3',
+    '-','E3','A2','E3','-','E3','-','E3','A2','E3','-','E3','-','E3','D3','A3',
+    '-','A3','-','A3','-','A3','-','A3','-','-','G3','-','-','-','-','-',
+    '-','G3','-','G3','-','-','E3','-','-','-','-','-','A2','E3','-','E3',
+    '-','E3','A2','E3','-','E3','-','E3','A2','E3','-','E3','-','E3','-','E3'
+    ]
   };
   const bitter = {
     tempo: 210,
@@ -639,7 +656,7 @@ const Levels = [
       { who:'narr',   text:"They stop at Charrd, their favorite little burger place, like always." },
       { who:'rojina', text:"Two of your super chungus Doubles please! ITS CHUNGUS TIME!!!" },
       { who:'narr',   img:'charrd', text:"The legendary Charrd Double. Chungus perfection." },
-      { who:'golsa',  text:"Best burgers in Meblourne. I'll miss these." },
+      { who:'golsa',  text:"Best burgers in Melbourne. I'll miss these." },
       { who:'rojina', text:"...miss? Golsa, what do you mean?" },
       { who:'golsa',  text:"Come on. Let's keep walking. I need to tell you something." },
     ],
@@ -650,7 +667,7 @@ const Levels = [
     dialogueMeet: [
       { who:'narr',   text:"They reach the airport. Golsa's suitcase is already packed." },
       { who:'rojina', text:"I can't believe you're leaving..." },
-      { who:'golsa',  text:"I am going to London as I am a super chungus and ill regret this decision. I'll miss you so much. But I promise I'll come back." },
+      { who:'golsa',  text:"I am going to London as I am a super chungus and I'll regret this decision. I'll miss you so much. But I promise I'll come back." },
       { who:'rojina', text:"You better! I'll be waiting right here." },
       { who:'golsa',  text:"Best friends forever, okay? Even across an ocean." },
       { who:'rojina', text:"Forever. Now go, before I start crying!" },
