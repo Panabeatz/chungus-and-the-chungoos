@@ -237,12 +237,23 @@ const Audio = (() => {
     '-','E3','A2','E3','-','E3','-','E3','A2','E3','-','E3','-','E3','-','E3'
     ]
   };
+  // Departure theme — a slow, melancholic square-pad arrangement of "Ey Joonam"
+  // (same song, quarter-note grid, A-minor, played through the soft pad voice).
   const bitter = {
-    tempo: 210,
-    lead: ['A4','-','C5','-','E5','-','D5','-','C5','-','A4','-','E4','-','-','-',
-           'F4','-','A4','-','C5','-','B4','-','A4','-','G4','-','E4','-','-','-'],
-    bass: ['A2','-','-','-','E3','-','-','-','F2','-','-','-','C3','-','-','-',
-           'F2','-','-','-','C3','-','-','-','G2','-','-','-','E3','-','-','-']
+    tempo: 620,   // ms per quarter step — slow and wistful
+    pad: true,    // render with the sustained square-pad voice instead of blips
+    lead:[
+    '-','-','-','E5','A4','E5','F5','E5','E5','E5',
+    'A4','E5','G5','F5','F5','F5','F5','G5','G5','A5',
+    'F5','D5','D5','D5','C5','D5','E5','F5','F5','F5',
+    'F5','A4','E5','F5','E5','E5','E5','A4','E5','G5'
+    ],
+    bass:[
+    '-','-','-','-','E3','-','A2','-','E3','-',
+    'E3','-','D3','-','A3','-','A3','-','G3','-',
+    '-','-','G3','-','E3','-','B3','-','-','-',
+    'A2','-','E3','-','E3','-','A2','-','E3','-'
+    ]
   };
 
   function ensure() {
@@ -272,14 +283,44 @@ const Audio = (() => {
     o.start(t); o.stop(t + dur + 0.02);
   }
 
+  // Soft square "pad": two slightly-detuned square oscillators through a
+  // lowpass filter, with a slow attack and long release — warm and melancholic.
+  function pad(freq, dur, gainVal, cutoff, dest) {
+    if (!actx) return;
+    const o1 = actx.createOscillator();
+    const o2 = actx.createOscillator();
+    const g  = actx.createGain();
+    const lp = actx.createBiquadFilter();
+    o1.type = 'square'; o2.type = 'square';
+    o1.frequency.value = freq; o2.frequency.value = freq;
+    o2.detune.value = -9;               // gentle chorus/detune for warmth
+    lp.type = 'lowpass';
+    lp.frequency.value = cutoff || 1000; // tame the square's harshness
+    lp.Q.value = 0.5;
+    const t = actx.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gainVal, t + 0.22);        // slow swell in
+    g.gain.setValueAtTime(gainVal, t + Math.max(0.24, dur * 0.45));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);          // long fade out
+    o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(dest || masterGain);
+    o1.start(t); o2.start(t); o1.stop(t + dur + 0.05); o2.stop(t + dur + 0.05);
+  }
+
   function playStep() {
     if (!actx || !currentTrack) return;
     const track = currentTrack === 'bitter' ? bitter : happy;
     const i = step % track.lead.length;
     const lead = track.lead[i];
     const bass = track.bass[i];
-    if (lead && lead !== '-') blip(N[lead], 'square',  track.tempo/1000*0.9, 0.18, musicGain);
-    if (bass && bass !== '-') blip(N[bass], 'triangle', track.tempo/1000*1.6, 0.22, musicGain);
+    const stepSec = track.tempo / 1000;
+    if (track.pad) {
+      // Sustained pad: notes ring longer than a step so they overlap softly.
+      if (lead && lead !== '-') pad(N[lead], stepSec * 1.9, 0.12, 1150, musicGain);
+      if (bass && bass !== '-') pad(N[bass], stepSec * 2.6, 0.14, 620,  musicGain);
+    } else {
+      if (lead && lead !== '-') blip(N[lead], 'square',  stepSec * 0.9, 0.18, musicGain);
+      if (bass && bass !== '-') blip(N[bass], 'triangle', stepSec * 1.6, 0.22, musicGain);
+    }
     step++;
   }
 
