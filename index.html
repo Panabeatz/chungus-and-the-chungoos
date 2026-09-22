@@ -327,7 +327,7 @@ function px(x, y, w, h, color) {
   ctx.fillRect(Math.round(x), Math.round(y), Math.ceil(w), Math.ceil(h));
 }
 
-// Golsa: dark hair, red cap, blue outfit. ~ drawn 28x40 px, scale s.
+// Golsa: black hair, pink cap, pink outfit. ~ drawn 28x40 px, scale s.
 function drawGolsa(cx, by, dir, walkFrame, s) {
   s = s || 1.6;
   const w = 20 * s, h = 30 * s;
@@ -335,33 +335,33 @@ function drawGolsa(cx, by, dir, walkFrame, s) {
   ctx.save();
   // shadow
   px(cx - w*0.35, by - 2, w*0.7, 4, 'rgba(0,0,0,0.22)');
-  // legs (blue) with walk cycle
+  // legs (pink) with walk cycle
   const legSwing = walkFrame === 1 ? 2*s : (walkFrame === 2 ? -2*s : 0);
-  px(x + w*0.22 + legSwing, y + h*0.72, w*0.22, h*0.28, '#2a4d9e');
-  px(x + w*0.56 - legSwing, y + h*0.72, w*0.22, h*0.28, '#2a4d9e');
+  px(x + w*0.22 + legSwing, y + h*0.72, w*0.22, h*0.28, '#d84f8f');
+  px(x + w*0.56 - legSwing, y + h*0.72, w*0.22, h*0.28, '#d84f8f');
   // shoes
   px(x + w*0.20 + legSwing, y + h*0.94, w*0.26, h*0.08, '#3a2a1a');
   px(x + w*0.54 - legSwing, y + h*0.94, w*0.26, h*0.08, '#3a2a1a');
-  // body / blue shirt
-  px(x + w*0.16, y + h*0.44, w*0.68, h*0.32, '#3f6fd6');
-  px(x + w*0.16, y + h*0.44, w*0.68, h*0.06, '#5a86e8'); // collar hi
+  // body / pink shirt
+  px(x + w*0.16, y + h*0.44, w*0.68, h*0.32, '#f06fa8');
+  px(x + w*0.16, y + h*0.44, w*0.68, h*0.06, '#ff8ec2'); // collar hi
   // arms
   const armSwing = walkFrame === 1 ? -1.5*s : (walkFrame === 2 ? 1.5*s : 0);
-  px(x + w*0.06, y + h*0.46 + armSwing, w*0.14, h*0.24, '#3f6fd6');
-  px(x + w*0.80, y + h*0.46 - armSwing, w*0.14, h*0.24, '#3f6fd6');
+  px(x + w*0.06, y + h*0.46 + armSwing, w*0.14, h*0.24, '#f06fa8');
+  px(x + w*0.80, y + h*0.46 - armSwing, w*0.14, h*0.24, '#f06fa8');
   px(x + w*0.06, y + h*0.66 + armSwing, w*0.14, h*0.07, '#f3c9a2'); // hand
   px(x + w*0.80, y + h*0.66 - armSwing, w*0.14, h*0.07, '#f3c9a2');
   // head / face
   px(x + w*0.20, y + h*0.10, w*0.60, h*0.34, '#f3c9a2');
-  // dark hair sides + back
-  px(x + w*0.14, y + h*0.10, w*0.10, h*0.30, '#2b1d16');
-  px(x + w*0.76, y + h*0.10, w*0.10, h*0.30, '#2b1d16');
-  // red cap
-  px(x + w*0.16, y + h*0.02, w*0.68, h*0.12, '#d8342c');
-  px(x + w*0.16, y + h*0.02, w*0.68, h*0.04, '#ee5147'); // hi
+  // black hair sides + back
+  px(x + w*0.14, y + h*0.10, w*0.10, h*0.30, '#16121a');
+  px(x + w*0.76, y + h*0.10, w*0.10, h*0.30, '#16121a');
+  // pink cap
+  px(x + w*0.16, y + h*0.02, w*0.68, h*0.12, '#e84f92');
+  px(x + w*0.16, y + h*0.02, w*0.68, h*0.04, '#ff86bd'); // hi
   // cap brim, on facing side
-  if (dir >= 0) px(x + w*0.70, y + h*0.10, w*0.26, h*0.05, '#b3271f');
-  else          px(x - w*0.06, y + h*0.10, w*0.26, h*0.05, '#b3271f');
+  if (dir >= 0) px(x + w*0.70, y + h*0.10, w*0.26, h*0.05, '#c73c7d');
+  else          px(x - w*0.06, y + h*0.10, w*0.26, h*0.05, '#c73c7d');
   // eyes
   const ex = dir >= 0 ? w*0.06 : 0;
   px(x + w*0.34 + ex, y + h*0.24, w*0.07, h*0.06, '#221');
@@ -371,7 +371,7 @@ function drawGolsa(cx, by, dir, walkFrame, s) {
   ctx.restore();
 }
 
-// Rojina: light/blonde hair with a bow, pink outfit.
+// Rojina: black hair with a bow, purple outfit.
 function drawRojina(cx, by, dir, walkFrame, s) {
   s = s || 1.6;
   const w = 20 * s, h = 30 * s;
@@ -380,31 +380,31 @@ function drawRojina(cx, by, dir, walkFrame, s) {
   px(cx - w*0.35, by - 2, w*0.7, 4, 'rgba(0,0,0,0.22)');
   // legs
   const legSwing = walkFrame === 1 ? 2*s : (walkFrame === 2 ? -2*s : 0);
-  px(x + w*0.24 + legSwing, y + h*0.74, w*0.20, h*0.26, '#f4d6e2');
-  px(x + w*0.56 - legSwing, y + h*0.74, w*0.20, h*0.26, '#f4d6e2');
-  px(x + w*0.22 + legSwing, y + h*0.94, w*0.24, h*0.08, '#c86fa0');
-  px(x + w*0.54 - legSwing, y + h*0.94, w*0.24, h*0.08, '#c86fa0');
-  // pink dress (a-line)
-  px(x + w*0.14, y + h*0.44, w*0.72, h*0.20, '#f48fb1');
-  px(x + w*0.08, y + h*0.60, w*0.84, h*0.18, '#ef7aa4'); // skirt flare
-  px(x + w*0.14, y + h*0.44, w*0.72, h*0.05, '#ffb3cd'); // hi
+  px(x + w*0.24 + legSwing, y + h*0.74, w*0.20, h*0.26, '#e3d3f5');
+  px(x + w*0.56 - legSwing, y + h*0.74, w*0.20, h*0.26, '#e3d3f5');
+  px(x + w*0.22 + legSwing, y + h*0.94, w*0.24, h*0.08, '#8a5cc0');
+  px(x + w*0.54 - legSwing, y + h*0.94, w*0.24, h*0.08, '#8a5cc0');
+  // purple dress (a-line)
+  px(x + w*0.14, y + h*0.44, w*0.72, h*0.20, '#9b5de5');
+  px(x + w*0.08, y + h*0.60, w*0.84, h*0.18, '#8248cf'); // skirt flare
+  px(x + w*0.14, y + h*0.44, w*0.72, h*0.05, '#bd90f2'); // hi
   // arms
   const armSwing = walkFrame === 1 ? -1.5*s : (walkFrame === 2 ? 1.5*s : 0);
-  px(x + w*0.04, y + h*0.46 + armSwing, w*0.13, h*0.22, '#f48fb1');
-  px(x + w*0.83, y + h*0.46 - armSwing, w*0.13, h*0.22, '#f48fb1');
+  px(x + w*0.04, y + h*0.46 + armSwing, w*0.13, h*0.22, '#9b5de5');
+  px(x + w*0.83, y + h*0.46 - armSwing, w*0.13, h*0.22, '#9b5de5');
   px(x + w*0.04, y + h*0.64 + armSwing, w*0.13, h*0.07, '#f7cfa8');
   px(x + w*0.83, y + h*0.64 - armSwing, w*0.13, h*0.07, '#f7cfa8');
   // head
   px(x + w*0.20, y + h*0.12, w*0.60, h*0.32, '#f7cfa8');
-  // blonde hair
-  px(x + w*0.14, y + h*0.06, w*0.72, h*0.16, '#f6d873'); // top
-  px(x + w*0.10, y + h*0.14, w*0.14, h*0.40, '#f6d873'); // left long
-  px(x + w*0.76, y + h*0.14, w*0.14, h*0.40, '#f6d873'); // right long
-  px(x + w*0.14, y + h*0.06, w*0.72, h*0.05, '#ffe89a'); // hi
-  // bow
-  px(x + w*0.60, y - h*0.01, w*0.14, h*0.10, '#e0447a');
-  px(x + w*0.74, y - h*0.01, w*0.14, h*0.10, '#e0447a');
-  px(x + w*0.69, y + h*0.02, w*0.06, h*0.05, '#ff7aa8');
+  // black hair
+  px(x + w*0.14, y + h*0.06, w*0.72, h*0.16, '#16121a'); // top
+  px(x + w*0.10, y + h*0.14, w*0.14, h*0.40, '#16121a'); // left long
+  px(x + w*0.76, y + h*0.14, w*0.14, h*0.40, '#16121a'); // right long
+  px(x + w*0.14, y + h*0.06, w*0.72, h*0.05, '#33293d'); // hi
+  // bow (purple)
+  px(x + w*0.60, y - h*0.01, w*0.14, h*0.10, '#7d3fc9');
+  px(x + w*0.74, y - h*0.01, w*0.14, h*0.10, '#7d3fc9');
+  px(x + w*0.69, y + h*0.02, w*0.06, h*0.05, '#bd90f2');
   // eyes
   const ex = dir >= 0 ? w*0.06 : 0;
   px(x + w*0.34 + ex, y + h*0.26, w*0.07, h*0.06, '#3a2233');
@@ -613,7 +613,7 @@ const Levels = [
     // fast food trigger
     foodX: 460,
     dialogueFood: [
-      { who:'narr',   text:"They stop at their favorite little burger place, like always." },
+      { who:'narr',   text:"They stop at Charrd, their favorite little burger place, like always." },
       { who:'rojina', text:"Two milkshakes, one straw. Chungoo rules!" },
       { who:'golsa',  text:"Best fries in the whole city. I'll miss these." },
       { who:'rojina', text:"...miss? Golsa, what do you mean?" },
@@ -1168,7 +1168,7 @@ function drawRestaurant(x, gy){
   ctx.fillStyle='#ffd15a'; ctx.fillRect(x-60, gy-110, 130, 110);
   ctx.fillStyle='#e0447a'; ctx.fillRect(x-70, gy-130, 150, 24);
   ctx.fillStyle='#fff'; ctx.font='bold 13px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText('BURGERS', x+5, gy-118);
+  ctx.fillText('Charrd', x+5, gy-118);
   ctx.fillStyle='#7a3d1f'; ctx.fillRect(x-8, gy-52, 30, 52);
   ctx.fillStyle='#bfe6ff'; ctx.fillRect(x-52, gy-92, 34, 34);
   // little burger icon
