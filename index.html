@@ -1,0 +1,1357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Chungus and the Chungoos</title>
+<style>
+  :root {
+    --dlg-bg: #fff6f9;
+    --dlg-border: #3a2a3a;
+    --dlg-text: #2a1f2a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #10121c;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #10121c;
+  }
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background: #87ceeb;
+    max-width: 100%; max-height: 100%;
+    touch-action: none;
+  }
+
+  /* ---- Touch controls ---- */
+  #touch {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 30;
+    display: none;
+  }
+  #touch.on { display: block; }
+  .tbtn {
+    position: absolute;
+    pointer-events: auto;
+    background: rgba(255,255,255,0.22);
+    border: 3px solid rgba(255,255,255,0.55);
+    border-radius: 16px;
+    color: #fff;
+    font-size: 30px;
+    font-weight: bold;
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(2px);
+    user-select: none;
+    text-shadow: 0 2px 3px rgba(0,0,0,.5);
+  }
+  .tbtn:active { background: rgba(255,255,255,0.45); }
+  #btnLeft  { left: 16px;  bottom: 26px; width: 74px; height: 74px; }
+  #btnRight { left: 104px; bottom: 26px; width: 74px; height: 74px; }
+  #btnJump  { right: 20px; bottom: 26px; width: 92px; height: 92px; border-radius: 50%; }
+
+  /* ---- top-right buttons ---- */
+  #ui {
+    position: fixed; top: 10px; right: 12px; z-index: 40;
+    display: flex; gap: 8px;
+  }
+  .ibtn {
+    pointer-events: auto;
+    background: rgba(20,16,28,0.55);
+    border: 2px solid rgba(255,255,255,0.5);
+    color: #fff; border-radius: 10px;
+    font-size: 15px; padding: 7px 11px;
+    cursor: pointer; font-family: inherit;
+  }
+  .ibtn:hover { background: rgba(40,32,56,0.8); }
+  #hint {
+    position: fixed; bottom: 8px; left: 0; right: 0; text-align: center;
+    color: rgba(255,255,255,0.6); font-size: 12px; z-index: 20;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="800" height="450"></canvas>
+</div>
+
+<div id="ui">
+  <button class="ibtn" id="muteBtn">🔊 Music</button>
+</div>
+
+<div id="touch">
+  <div class="tbtn" id="btnLeft">◀</div>
+  <div class="tbtn" id="btnRight">▶</div>
+  <div class="tbtn" id="btnJump">⤴</div>
+</div>
+
+<div id="hint">Arrows / A-D to move &nbsp;•&nbsp; Space / Up to jump &nbsp;•&nbsp; Space / Click to advance dialogue</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   CHUNGUS AND THE CHUNGOOS
+   A tiny story-driven platformer. Single file, no dependencies.
+
+   Sections below:
+     1. Canvas + resize
+     2. Input (keyboard + touch)
+     3. Audio (Web Audio chiptune + SFX)
+     4. Pixel sprite drawing helpers + character sprites
+     5. Background / scenery drawing
+     6. Dialogue system
+     7. Level definitions
+     8. Game state machine
+     9. Physics + update
+    10. Render
+    11. Main loop
+   ========================================================================= */
+
+/* ---------- 1. Canvas ---------- */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const VW = 800, VH = 450;           // internal virtual resolution
+ctx.imageSmoothingEnabled = false;
+
+function resize() {
+  const wrap = document.getElementById('wrap');
+  const availW = window.innerWidth;
+  const availH = window.innerHeight;
+  const scale = Math.min(availW / VW, availH / VH);
+  canvas.style.width  = Math.floor(VW * scale) + 'px';
+  canvas.style.height = Math.floor(VH * scale) + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ---------- 2. Input ---------- */
+const keys = { left:false, right:false, jump:false };
+let advancePressed = false;   // consumed edge for dialogue / start
+let anyKeyEver = false;
+
+function setKey(e, down) {
+  const k = e.key.toLowerCase();
+  if (k === 'arrowleft' || k === 'a') { keys.left = down; e.preventDefault(); }
+  else if (k === 'arrowright' || k === 'd') { keys.right = down; e.preventDefault(); }
+  else if (k === ' ' || k === 'arrowup' || k === 'w' || k === 'spacebar') {
+    keys.jump = down;
+    // Only treat the FIRST keydown as an "advance" edge — ignore the browser's
+    // auto-repeat (e.repeat) so holding jump doesn't machine-gun through
+    // dialogue lines and level cards.
+    if (down && !e.repeat) advancePressed = true;
+    e.preventDefault();
+  } else if (k === 'enter') {
+    if (down && !e.repeat) advancePressed = true;
+  }
+  if (down) { anyKeyEver = true; startAudioOnce(); }
+}
+window.addEventListener('keydown', e => setKey(e, true));
+window.addEventListener('keyup',   e => setKey(e, false));
+
+// Click / tap anywhere to advance dialogue or start
+canvas.addEventListener('mousedown', () => { advancePressed = true; anyKeyEver = true; startAudioOnce(); });
+
+// Touch buttons
+function bindTouch(id, on, off) {
+  const el = document.getElementById(id);
+  const start = e => { e.preventDefault(); on(); anyKeyEver = true; startAudioOnce(); };
+  const end   = e => { e.preventDefault(); off(); };
+  el.addEventListener('touchstart', start, {passive:false});
+  el.addEventListener('touchend', end, {passive:false});
+  el.addEventListener('touchcancel', end, {passive:false});
+  el.addEventListener('mousedown', start);
+  el.addEventListener('mouseup', end);
+  el.addEventListener('mouseleave', end);
+}
+bindTouch('btnLeft',  () => keys.left = true,  () => keys.left = false);
+bindTouch('btnRight', () => keys.right = true, () => keys.right = false);
+bindTouch('btnJump',  () => { keys.jump = true; advancePressed = true; }, () => keys.jump = false);
+
+// Tapping the canvas area itself also advances dialogue on touch
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault(); advancePressed = true; anyKeyEver = true; startAudioOnce();
+}, {passive:false});
+
+// Show touch controls on touch-capable devices
+const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+if (isTouch) document.getElementById('touch').classList.add('on');
+
+/* ---------- 3. Audio (Web Audio chiptune) ---------- */
+const Audio = (() => {
+  let actx = null;
+  let masterGain = null;
+  let musicGain = null;
+  let started = false;
+  let muted = false;
+  let seqTimer = null;
+  let currentTrack = null;
+  let step = 0;
+
+  // note frequency helper
+  const N = {};
+  (() => {
+    const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    for (let oct = 2; oct <= 6; oct++) {
+      for (let i = 0; i < 12; i++) {
+        const freq = 440 * Math.pow(2, (oct*12 + i - 57) / 12);
+        N[names[i] + oct] = freq;
+      }
+    }
+    N['-'] = 0; // rest
+  })();
+
+  // Melodies: arrays of note names, one per 8th-note step.
+  const happy = {
+    tempo: 150, // ms per step
+    lead: ['C5','E5','G5','E5','C5','E5','G5','B5','A5','G5','E5','G5','C5','-','G4','-',
+           'D5','F5','A5','F5','D5','F5','A5','C6','B5','A5','F5','A5','D5','-','A4','-'],
+    bass: ['C3','-','G3','-','C3','-','G3','-','C3','-','G3','-','C3','-','G3','-',
+           'F3','-','C4','-','F3','-','C4','-','G3','-','D4','-','G3','-','G3','-']
+  };
+  const bitter = {
+    tempo: 210,
+    lead: ['A4','-','C5','-','E5','-','D5','-','C5','-','A4','-','E4','-','-','-',
+           'F4','-','A4','-','C5','-','B4','-','A4','-','G4','-','E4','-','-','-'],
+    bass: ['A2','-','-','-','E3','-','-','-','F2','-','-','-','C3','-','-','-',
+           'F2','-','-','-','C3','-','-','-','G2','-','-','-','E3','-','-','-']
+  };
+
+  function ensure() {
+    if (actx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    actx = new AC();
+    masterGain = actx.createGain();
+    masterGain.gain.value = 0.5;
+    masterGain.connect(actx.destination);
+    musicGain = actx.createGain();
+    musicGain.gain.value = 0.35;
+    musicGain.connect(masterGain);
+  }
+
+  function blip(freq, type, dur, gainVal, dest) {
+    if (!actx) return;
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = type;
+    o.frequency.value = freq;
+    const t = actx.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gainVal, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(dest || masterGain);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+
+  function playStep() {
+    if (!actx || !currentTrack) return;
+    const track = currentTrack === 'bitter' ? bitter : happy;
+    const i = step % track.lead.length;
+    const lead = track.lead[i];
+    const bass = track.bass[i];
+    if (lead && lead !== '-') blip(N[lead], 'square',  track.tempo/1000*0.9, 0.18, musicGain);
+    if (bass && bass !== '-') blip(N[bass], 'triangle', track.tempo/1000*1.6, 0.22, musicGain);
+    step++;
+  }
+
+  function startLoop(track) {
+    ensure();
+    if (!actx) return;
+    if (currentTrack === track && seqTimer) return; // already playing
+    currentTrack = track;
+    step = 0;
+    if (seqTimer) clearInterval(seqTimer);
+    const tempo = (track === 'bitter' ? bitter.tempo : happy.tempo);
+    seqTimer = setInterval(playStep, tempo);
+  }
+
+  return {
+    start() {
+      ensure();
+      if (actx && actx.state === 'suspended') actx.resume();
+      started = true;
+    },
+    isStarted() { return started; },
+    play(track) {
+      if (muted) { currentTrack = track; return; }
+      startLoop(track);
+    },
+    stop() { if (seqTimer) { clearInterval(seqTimer); seqTimer = null; } },
+    sfxJump() { ensure(); if (muted) return; blip(660, 'square', 0.12, 0.2); setTimeout(()=>blip(990,'square',0.1,0.16), 60); },
+    sfxCoin() { ensure(); if (muted) return; blip(880,'square',0.08,0.2); setTimeout(()=>blip(1320,'square',0.14,0.18), 70); },
+    sfxTalk() { ensure(); if (muted) return; blip(520,'square',0.03,0.05); },
+    sfxHeart(){ ensure(); if (muted) return; blip(784,'triangle',0.15,0.2); setTimeout(()=>blip(1046,'triangle',0.2,0.2),120); },
+    toggleMute() {
+      muted = !muted;
+      if (muted) { this.stop(); }
+      else if (currentTrack) { this.start(); startLoop(currentTrack); }
+      return muted;
+    },
+    isMuted() { return muted; }
+  };
+})();
+
+let audioKicked = false;
+function startAudioOnce() {
+  if (audioKicked) return;
+  audioKicked = true;
+  Audio.start();
+  // resume current level's track
+  if (state.track) Audio.play(state.track);
+}
+
+document.getElementById('muteBtn').addEventListener('click', (e) => {
+  startAudioOnce();
+  const m = Audio.toggleMute();
+  e.target.textContent = m ? '🔇 Music' : '🔊 Music';
+});
+
+/* ---------- 4. Pixel sprite drawing ---------- */
+// Draw a scaled pixel from a small grid. Each character is a function that
+// draws itself at (x,y) = bottom-center anchor, facing dir (1 right / -1 left).
+
+function px(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(x), Math.round(y), Math.ceil(w), Math.ceil(h));
+}
+
+// Golsa: dark hair, red cap, blue outfit. ~ drawn 28x40 px, scale s.
+function drawGolsa(cx, by, dir, walkFrame, s) {
+  s = s || 1.6;
+  const w = 20 * s, h = 30 * s;
+  const x = cx - w/2, y = by - h;
+  ctx.save();
+  // shadow
+  px(cx - w*0.35, by - 2, w*0.7, 4, 'rgba(0,0,0,0.22)');
+  // legs (blue) with walk cycle
+  const legSwing = walkFrame === 1 ? 2*s : (walkFrame === 2 ? -2*s : 0);
+  px(x + w*0.22 + legSwing, y + h*0.72, w*0.22, h*0.28, '#2a4d9e');
+  px(x + w*0.56 - legSwing, y + h*0.72, w*0.22, h*0.28, '#2a4d9e');
+  // shoes
+  px(x + w*0.20 + legSwing, y + h*0.94, w*0.26, h*0.08, '#3a2a1a');
+  px(x + w*0.54 - legSwing, y + h*0.94, w*0.26, h*0.08, '#3a2a1a');
+  // body / blue shirt
+  px(x + w*0.16, y + h*0.44, w*0.68, h*0.32, '#3f6fd6');
+  px(x + w*0.16, y + h*0.44, w*0.68, h*0.06, '#5a86e8'); // collar hi
+  // arms
+  const armSwing = walkFrame === 1 ? -1.5*s : (walkFrame === 2 ? 1.5*s : 0);
+  px(x + w*0.06, y + h*0.46 + armSwing, w*0.14, h*0.24, '#3f6fd6');
+  px(x + w*0.80, y + h*0.46 - armSwing, w*0.14, h*0.24, '#3f6fd6');
+  px(x + w*0.06, y + h*0.66 + armSwing, w*0.14, h*0.07, '#f3c9a2'); // hand
+  px(x + w*0.80, y + h*0.66 - armSwing, w*0.14, h*0.07, '#f3c9a2');
+  // head / face
+  px(x + w*0.20, y + h*0.10, w*0.60, h*0.34, '#f3c9a2');
+  // dark hair sides + back
+  px(x + w*0.14, y + h*0.10, w*0.10, h*0.30, '#2b1d16');
+  px(x + w*0.76, y + h*0.10, w*0.10, h*0.30, '#2b1d16');
+  // red cap
+  px(x + w*0.16, y + h*0.02, w*0.68, h*0.12, '#d8342c');
+  px(x + w*0.16, y + h*0.02, w*0.68, h*0.04, '#ee5147'); // hi
+  // cap brim, on facing side
+  if (dir >= 0) px(x + w*0.70, y + h*0.10, w*0.26, h*0.05, '#b3271f');
+  else          px(x - w*0.06, y + h*0.10, w*0.26, h*0.05, '#b3271f');
+  // eyes
+  const ex = dir >= 0 ? w*0.06 : 0;
+  px(x + w*0.34 + ex, y + h*0.24, w*0.07, h*0.06, '#221');
+  px(x + w*0.54 + ex, y + h*0.24, w*0.07, h*0.06, '#221');
+  // smile
+  px(x + w*0.40 + ex*0.5, y + h*0.34, w*0.20, h*0.03, '#8a4a3a');
+  ctx.restore();
+}
+
+// Rojina: light/blonde hair with a bow, pink outfit.
+function drawRojina(cx, by, dir, walkFrame, s) {
+  s = s || 1.6;
+  const w = 20 * s, h = 30 * s;
+  const x = cx - w/2, y = by - h;
+  ctx.save();
+  px(cx - w*0.35, by - 2, w*0.7, 4, 'rgba(0,0,0,0.22)');
+  // legs
+  const legSwing = walkFrame === 1 ? 2*s : (walkFrame === 2 ? -2*s : 0);
+  px(x + w*0.24 + legSwing, y + h*0.74, w*0.20, h*0.26, '#f4d6e2');
+  px(x + w*0.56 - legSwing, y + h*0.74, w*0.20, h*0.26, '#f4d6e2');
+  px(x + w*0.22 + legSwing, y + h*0.94, w*0.24, h*0.08, '#c86fa0');
+  px(x + w*0.54 - legSwing, y + h*0.94, w*0.24, h*0.08, '#c86fa0');
+  // pink dress (a-line)
+  px(x + w*0.14, y + h*0.44, w*0.72, h*0.20, '#f48fb1');
+  px(x + w*0.08, y + h*0.60, w*0.84, h*0.18, '#ef7aa4'); // skirt flare
+  px(x + w*0.14, y + h*0.44, w*0.72, h*0.05, '#ffb3cd'); // hi
+  // arms
+  const armSwing = walkFrame === 1 ? -1.5*s : (walkFrame === 2 ? 1.5*s : 0);
+  px(x + w*0.04, y + h*0.46 + armSwing, w*0.13, h*0.22, '#f48fb1');
+  px(x + w*0.83, y + h*0.46 - armSwing, w*0.13, h*0.22, '#f48fb1');
+  px(x + w*0.04, y + h*0.64 + armSwing, w*0.13, h*0.07, '#f7cfa8');
+  px(x + w*0.83, y + h*0.64 - armSwing, w*0.13, h*0.07, '#f7cfa8');
+  // head
+  px(x + w*0.20, y + h*0.12, w*0.60, h*0.32, '#f7cfa8');
+  // blonde hair
+  px(x + w*0.14, y + h*0.06, w*0.72, h*0.16, '#f6d873'); // top
+  px(x + w*0.10, y + h*0.14, w*0.14, h*0.40, '#f6d873'); // left long
+  px(x + w*0.76, y + h*0.14, w*0.14, h*0.40, '#f6d873'); // right long
+  px(x + w*0.14, y + h*0.06, w*0.72, h*0.05, '#ffe89a'); // hi
+  // bow
+  px(x + w*0.60, y - h*0.01, w*0.14, h*0.10, '#e0447a');
+  px(x + w*0.74, y - h*0.01, w*0.14, h*0.10, '#e0447a');
+  px(x + w*0.69, y + h*0.02, w*0.06, h*0.05, '#ff7aa8');
+  // eyes
+  const ex = dir >= 0 ? w*0.06 : 0;
+  px(x + w*0.34 + ex, y + h*0.26, w*0.07, h*0.06, '#3a2233');
+  px(x + w*0.54 + ex, y + h*0.26, w*0.07, h*0.06, '#3a2233');
+  // smile
+  px(x + w*0.40 + ex*0.5, y + h*0.36, w*0.20, h*0.03, '#9a5a6a');
+  // blush
+  px(x + w*0.28 + ex, y + h*0.32, w*0.08, h*0.04, 'rgba(240,120,150,0.5)');
+  px(x + w*0.60 + ex, y + h*0.32, w*0.08, h*0.04, 'rgba(240,120,150,0.5)');
+  ctx.restore();
+}
+
+function drawChar(who, cx, by, dir, walkFrame, s) {
+  if (who === 'golsa') drawGolsa(cx, by, dir, walkFrame, s);
+  else drawRojina(cx, by, dir, walkFrame, s);
+}
+
+/* ---------- 5. Scenery ---------- */
+function drawCloud(x, y, s) {
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.beginPath();
+  ctx.arc(x, y, 14*s, 0, 7); ctx.arc(x+16*s, y-6*s, 18*s, 0, 7);
+  ctx.arc(x+34*s, y, 15*s, 0, 7); ctx.arc(x+16*s, y+6*s, 16*s, 0, 7);
+  ctx.fill();
+}
+function drawTree(x, groundY) {
+  px(x-6, groundY-42, 12, 42, '#7a4a24');
+  ctx.fillStyle = '#3fa34d';
+  ctx.beginPath(); ctx.arc(x, groundY-52, 30, 0, 7); ctx.fill();
+  ctx.fillStyle = '#4fc45f';
+  ctx.beginPath(); ctx.arc(x-12, groundY-46, 20, 0, 7); ctx.arc(x+14, groundY-48, 22, 0, 7); ctx.fill();
+}
+function drawFlower(x, groundY, c) {
+  px(x-1, groundY-10, 2, 10, '#2e8b3a');
+  ctx.fillStyle = c;
+  for (let i=0;i<4;i++){ const a=i*Math.PI/2; px(x+Math.cos(a)*3-2, groundY-13+Math.sin(a)*3, 4,4,c); }
+  px(x-2, groundY-13, 4,4,'#ffd34d');
+}
+function drawBush(x, groundY) {
+  ctx.fillStyle = '#2f9d43';
+  ctx.beginPath(); ctx.arc(x,groundY-8,14,0,7); ctx.arc(x+16,groundY-10,16,0,7); ctx.arc(x+30,groundY-8,14,0,7); ctx.fill();
+}
+
+/* ---------- 6. Dialogue system ---------- */
+const Dialogue = {
+  active: false,
+  lines: [],           // [{who:'golsa'|'rojina'|'narr', text:''}]
+  idx: 0,
+  shown: '',
+  charTimer: 0,
+  onDone: null,
+  start(lines, onDone) {
+    this.active = true;
+    this.lines = lines;
+    this.idx = 0;
+    this.shown = '';
+    this.charTimer = 0;
+    this.onDone = onDone || null;
+  },
+  advance() {
+    const line = this.lines[this.idx];
+    if (!line) return;
+    if (this.shown.length < line.text.length) {
+      // finish typing instantly
+      this.shown = line.text;
+      return;
+    }
+    // next line
+    this.idx++;
+    this.shown = '';
+    this.charTimer = 0;
+    if (this.idx >= this.lines.length) {
+      this.active = false;
+      const cb = this.onDone; this.onDone = null;
+      if (cb) cb();
+    }
+  },
+  update(dt) {
+    if (!this.active) return;
+    const line = this.lines[this.idx];
+    if (!line) return;
+    if (this.shown.length < line.text.length) {
+      this.charTimer += dt;
+      while (this.charTimer > 0.018 && this.shown.length < line.text.length) {
+        this.charTimer -= 0.018;
+        this.shown += line.text[this.shown.length];
+        if (this.shown.length % 2 === 0) Audio.sfxTalk();
+      }
+    }
+  },
+  render() {
+    if (!this.active) return;
+    const line = this.lines[this.idx];
+    const boxH = 108, pad = 16;
+    const bx = 24, by = VH - boxH - 20, bw = VW - 48;
+    // box
+    ctx.fillStyle = 'rgba(20,14,26,0.35)';
+    ctx.fillRect(bx+4, by+6, bw, boxH);
+    ctx.fillStyle = getCSS('--dlg-bg');
+    roundRect(bx, by, bw, boxH, 10, true, false);
+    ctx.lineWidth = 4; ctx.strokeStyle = getCSS('--dlg-border');
+    roundRect(bx, by, bw, boxH, 10, false, true);
+
+    // speaker name tag + mini portrait
+    let name = '', color = '#3a2a3a';
+    if (line.who === 'golsa') { name = 'Golsa'; color = '#2a4d9e'; }
+    else if (line.who === 'rojina') { name = 'Rojina'; color = '#c14a86'; }
+    if (name) {
+      ctx.fillStyle = color;
+      roundRect(bx+14, by-16, ctx.measureText(name).width*0 + 96, 26, 6, true, false);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 16px "Courier New", monospace';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(name, bx+26, by-2);
+      // tiny face in corner
+      if (line.who === 'golsa') drawGolsa(bx + bw - 44, by + boxH - 14, 1, 0, 1.4);
+      else drawRojina(bx + bw - 44, by + boxH - 14, 1, 0, 1.4);
+    }
+
+    // text (word wrap)
+    ctx.fillStyle = getCSS('--dlg-text');
+    ctx.font = (line.who === 'narr' ? 'italic ' : '') + '19px "Courier New", monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    wrapText(this.shown, bx + pad, by + pad + 4, bw - pad*2 - 70, 26);
+
+    // advance arrow
+    if (this.shown.length >= line.text.length) {
+      const t = performance.now()/300;
+      const ay = by + boxH - 22 + Math.sin(t)*3;
+      ctx.fillStyle = getCSS('--dlg-border');
+      ctx.beginPath();
+      ctx.moveTo(bx+bw-30, ay); ctx.lineTo(bx+bw-18, ay); ctx.lineTo(bx+bw-24, ay+8);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+};
+
+function getCSS(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function roundRect(x,y,w,h,r,fill,stroke){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+  if(fill) ctx.fill(); if(stroke) ctx.stroke();
+}
+function wrapText(text, x, y, maxW, lh){
+  const words = text.split(' ');
+  let line = '', yy = y;
+  for (const word of words){
+    const test = line + word + ' ';
+    if (ctx.measureText(test).width > maxW && line){
+      ctx.fillText(line, x, yy); line = word + ' '; yy += lh;
+    } else line = test;
+  }
+  ctx.fillText(line, x, yy);
+}
+
+/* ---------- 7. Levels ---------- */
+// Ground is a flat baseline per level; a few platforms + scenery + triggers.
+const GROUND_Y = 380;
+
+const Levels = [
+  // ---- LEVEL 1: New Friends (Persian School) ----
+  {
+    id: 1, title: 'Level 1', subtitle: 'New Friends',
+    track: 'happy',
+    theme: 'school',
+    width: 2000,
+    player: 'golsa',
+    startX: 80,
+    companion: null,
+    // NPC waiting to be met
+    npc: { who: 'rojina', x: 1250, dir: -1 },
+    platforms: [
+      { x: 520, y: 320, w: 120, h: 18 },
+      { x: 760, y: 275, w: 120, h: 18 },
+      { x: 980, y: 320, w: 120, h: 18 },
+    ],
+    // story trigger: meeting Rojina
+    meetX: 1180,
+    goalX: 1900,
+    dialogueMeet: [
+      { who:'golsa',  text:"Hi! I don't think I've seen you at Persian school before." },
+      { who:'rojina', text:"I just started today! I'm Rojina." },
+      { who:'golsa',  text:"I'm Golsa! Everyone calls me Chungus though. Want to be friends?" },
+      { who:'rojina', text:"Yes!! Best friends! You can call me Chungoo!" },
+      { who:'narr',   text:"Golsa and Rojina walk off toward class together, giggling the whole way." },
+    ],
+    dialogueGoal: [
+      { who:'narr', text:"*RIIING!* The school bell rings. First day, first best friend." },
+    ],
+  },
+
+  // ---- LEVEL 2: Fast Food & The Airport (Bittersweet) ----
+  {
+    id: 2, title: 'Level 2', subtitle: 'Fast Food & The Airport',
+    track: 'happy',
+    theme: 'city',
+    width: 2400,
+    player: 'golsa',
+    startX: 80,
+    companion: { who: 'rojina' },  // Rojina follows from the start
+    platforms: [
+      { x: 900, y: 300, w: 110, h: 18 },
+      { x: 1080, y: 260, w: 110, h: 18 },
+    ],
+    // fast food trigger
+    foodX: 460,
+    dialogueFood: [
+      { who:'narr',   text:"They stop at their favorite little burger place, like always." },
+      { who:'rojina', text:"Two milkshakes, one straw. Chungoo rules!" },
+      { who:'golsa',  text:"Best fries in the whole city. I'll miss these." },
+      { who:'rojina', text:"...miss? Golsa, what do you mean?" },
+      { who:'golsa',  text:"Come on. Let's keep walking. I need to tell you something." },
+    ],
+    // airport trigger
+    meetX: 1900,
+    goalX: 2320,
+    airport: true,
+    dialogueMeet: [
+      { who:'narr',   text:"They reach the airport. Golsa's suitcase is already packed." },
+      { who:'rojina', text:"I can't believe you're leaving..." },
+      { who:'golsa',  text:"I'll miss you so much. But I promise I'll come back." },
+      { who:'rojina', text:"You better! I'll be waiting right here." },
+      { who:'golsa',  text:"Best friends forever, okay? Even across an ocean." },
+      { who:'rojina', text:"Forever. Now go, before I start crying!" },
+    ],
+    plane: true, // triggers plane takeoff sequence after dialogueMeet
+  },
+
+  // ---- LEVEL 3: Coming Home (Reunion) ----
+  {
+    id: 3, title: 'Level 3', subtitle: 'Coming Home',
+    track: 'happy',
+    theme: 'airport',
+    width: 1700,
+    player: 'rojina',
+    startX: 80,
+    companion: null,
+    platforms: [],
+    airport: true,
+    landing: true, // plane lands and Golsa walks off
+    meetX: 1250,
+    goalX: 1600,
+    dialogueMeet: [
+      { who:'narr',   text:"A plane touches down. The arrivals doors slide open..." },
+      { who:'rojina', text:"You're back!! You're really back!" },
+      { who:'golsa',  text:"I told you I'd come back to my best friend." },
+      { who:'rojina', text:"I never took down the sign that says 'Waiting for Chungus.'" },
+      { who:'golsa',  text:"Chungus and Chungoo. Best friends forever." },
+    ],
+    ending: true,
+  },
+];
+
+/* ---------- 8. Game state ---------- */
+const state = {
+  scene: 'title',   // title | levelcard | play | ending
+  levelIndex: 0,
+  track: 'happy',
+  cardTimer: 0,
+  // player
+  px: 80, py: GROUND_Y, vx: 0, vy: 0, onGround: true, dir: 1,
+  walkTimer: 0, walkFrame: 0,
+  camX: 0,
+  // companion (follows player)
+  comp: null,   // {x,y,dir,walkFrame, trail:[]}
+  // flags
+  metNPC: false,
+  foodDone: false,
+  goalReached: false,
+  planeStage: 0,   // 0 none, 1 boarding, 2 taxiing, 3 flown
+  plane: null,     // {x,y,vx,phase}
+  confetti: [],
+  endTimer: 0,
+  trailBuffer: [],  // recorded player positions for companion follow
+  inputCooldown: 0, // brief lock after a scene/dialogue transition so one press can't cascade
+  _prevDlg: false,  // was dialogue active last frame (to detect it closing)
+};
+
+// Lock "advance" input briefly so the same press can't skip through the next
+// screen (e.g. closing dialogue and immediately blowing past a level card).
+function lockInput(t) { state.inputCooldown = t || 0.25; }
+
+let level = Levels[0];
+
+function loadLevel(i) {
+  state.levelIndex = i;
+  level = Levels[i];
+  state.px = level.startX;
+  state.py = GROUND_Y;
+  state.vx = 0; state.vy = 0; state.onGround = true; state.dir = 1;
+  state.camX = 0;
+  state.metNPC = false;
+  state.foodDone = !level.foodX;
+  state.goalReached = false;
+  state.planeStage = 0;
+  state.plane = null;
+  state.confetti = [];
+  state.endTimer = 0;
+  state.trailBuffer = [];
+  state.track = level.track;
+  if (level.companion) {
+    state.comp = { who: level.companion.who, x: level.startX - 40, y: GROUND_Y, dir: 1, walkFrame: 0 };
+  } else {
+    state.comp = null;
+  }
+  // level 3: golsa arrives via plane, companion (golsa) appears after landing
+  Audio.play(state.track);
+}
+
+function nextLevel() {
+  if (state.levelIndex + 1 < Levels.length) {
+    startLevelCard(state.levelIndex + 1);
+  } else {
+    state.scene = 'ending';
+    state.endTimer = 0;
+    spawnConfetti();
+    Audio.play('happy');
+    Audio.sfxHeart();
+    lockInput(0.4);
+  }
+}
+
+function startLevelCard(i) {
+  state.scene = 'levelcard';
+  state.cardTimer = 0;
+  state.pendingLevel = i;
+  lockInput(0.4);
+}
+
+/* ---------- 9. Physics + update ---------- */
+const GRAV = 1400;
+const MOVE = 190;
+const JUMP_V = 480;
+
+function update(dt) {
+  Dialogue.update(dt);
+
+  // Detect a dialogue closing this frame and lock input so the same key press
+  // that dismissed the last line can't immediately trigger the next thing.
+  if (state._prevDlg && !Dialogue.active) lockInput(0.25);
+  state._prevDlg = Dialogue.active;
+
+  // While locked, ignore any pending "advance" edge.
+  if (state.inputCooldown > 0) {
+    state.inputCooldown -= dt;
+    advancePressed = false;
+  }
+
+  if (state.scene === 'title') {
+    if (advancePressed) { advancePressed = false; loadLevel(0); startLevelCard(0); lockInput(0.3); }
+    return;
+  }
+
+  if (state.scene === 'levelcard') {
+    state.cardTimer += dt;
+    if (state.cardTimer > 1.6 || advancePressed) {
+      advancePressed = false;
+      loadLevel(state.pendingLevel);
+      state.scene = 'play';
+      lockInput(0.3);
+    }
+    return;
+  }
+
+  if (state.scene === 'ending') {
+    state.endTimer += dt;
+    updateConfetti(dt);
+    if (advancePressed && state.endTimer > 1.2) {
+      advancePressed = false;
+      // restart from title
+      state.scene = 'title';
+      lockInput(0.3);
+    }
+    return;
+  }
+
+  // ---- PLAY ----
+  // Dialogue eats input
+  if (Dialogue.active) {
+    if (advancePressed) { advancePressed = false; Audio.sfxTalk(); Dialogue.advance(); }
+    // keep companion glued during talk
+    updateCompanionIdle();
+    return;
+  }
+
+  // plane sequences pause control
+  if (state.planeStage >= 1 && level.plane) { updateTakeoff(dt); return; }
+  if (level.landing && state.planeStage < 3 && state.metNPC === false && state.landingPhase) {
+    // landing handled in trigger below
+  }
+
+  // horizontal movement
+  let ax = 0;
+  if (keys.left)  { ax -= 1; state.dir = -1; }
+  if (keys.right) { ax += 1; state.dir = 1; }
+  state.vx = ax * MOVE;
+
+  // jump (floaty)
+  if (keys.jump && state.onGround) {
+    state.vy = -JUMP_V;
+    state.onGround = false;
+    Audio.sfxJump();
+  }
+  advancePressed = false; // consume any leftover
+
+  // integrate
+  state.vy += GRAV * dt;
+  state.px += state.vx * dt;
+  state.py += state.vy * dt;
+
+  // world bounds
+  if (state.px < 20) state.px = 20;
+  if (state.px > level.width - 20) state.px = level.width - 20;
+
+  // ground + platform collision
+  state.onGround = false;
+  if (state.py >= GROUND_Y) { state.py = GROUND_Y; state.vy = 0; state.onGround = true; }
+  // platforms (land only when falling onto them)
+  for (const p of level.platforms) {
+    const withinX = state.px > p.x - 14 && state.px < p.x + p.w + 14;
+    if (withinX && state.vy >= 0) {
+      const prevFoot = state.py - state.vy * dt;
+      if (prevFoot <= p.y + 2 && state.py >= p.y && state.py <= p.y + 26) {
+        state.py = p.y; state.vy = 0; state.onGround = true;
+      }
+    }
+  }
+
+  // walk animation
+  if (Math.abs(state.vx) > 1 && state.onGround) {
+    state.walkTimer += dt;
+    if (state.walkTimer > 0.13) { state.walkTimer = 0; state.walkFrame = state.walkFrame === 1 ? 2 : 1; }
+  } else if (state.onGround) {
+    state.walkFrame = 0;
+  }
+
+  // record trail for companion following
+  state.trailBuffer.push({ x: state.px, dir: state.dir, moving: Math.abs(state.vx) > 1 });
+  if (state.trailBuffer.length > 40) state.trailBuffer.shift();
+  updateCompanion(dt);
+
+  // camera follow
+  const targetCam = state.px - VW * 0.4;
+  state.camX += (targetCam - state.camX) * Math.min(1, dt * 6);
+  state.camX = Math.max(0, Math.min(level.width - VW, state.camX));
+
+  // ---- triggers ----
+  // fast food (level 2)
+  if (level.foodX && !state.foodDone && state.px > level.foodX) {
+    state.foodDone = true;
+    Audio.sfxCoin();
+    Dialogue.start(level.dialogueFood);
+  }
+
+  // meeting / airport trigger
+  if (!state.metNPC && state.foodDone && state.px > level.meetX) {
+    state.metNPC = true;
+    Audio.sfxCoin();
+    if (level.id === 3) {
+      // landing: play landing then dialogue
+      state.planeStage = 0;
+      startLanding();
+    } else {
+      Dialogue.start(level.dialogueMeet, () => {
+        if (level.plane) {
+          // begin plane boarding
+          state.planeStage = 1;
+          state.plane = { x: state.px + 120, y: GROUND_Y - 60, vx: 0, phase: 0, t: 0 };
+          if (state.track !== 'bitter') { state.track = 'bitter'; Audio.play('bitter'); }
+        } else if (level.companion === null && level.id === 1) {
+          // level 1: rojina becomes companion, walk to goal
+          state.comp = { who: 'rojina', x: level.npc.x, y: GROUND_Y, dir: 1, walkFrame: 0 };
+        }
+      });
+    }
+  }
+
+  // goal
+  if (!state.goalReached && state.px > level.goalX && canReachGoal()) {
+    state.goalReached = true;
+    Audio.sfxCoin();
+    if (level.dialogueGoal) {
+      Dialogue.start(level.dialogueGoal, () => nextLevel());
+    } else if (!level.plane && !level.ending) {
+      nextLevel();
+    }
+  }
+}
+
+function canReachGoal() {
+  // In levels that end with a plane / special sequence, goal handled separately
+  if (level.plane) return false;
+  if (level.ending) return state.metNPC && !Dialogue.active;
+  return state.metNPC; // must have met friend first (levels 1)
+}
+
+// Companion follows a delayed copy of the player's trail
+function updateCompanion(dt) {
+  if (!state.comp) return;
+  const gap = 22; // frames behind
+  const t = state.trailBuffer[Math.max(0, state.trailBuffer.length - 1 - gap)];
+  if (t) {
+    const targetX = t.x - 34 * (t.dir >= 0 ? 1 : -1) * 0 - 30; // stay a bit behind
+    const desired = t.x - 34;
+    state.comp.x += (desired - state.comp.x) * Math.min(1, dt * 6);
+    state.comp.dir = state.px >= state.comp.x ? 1 : -1;
+    if (Math.abs(desired - state.comp.x) > 2) {
+      state.comp._wt = (state.comp._wt||0) + dt;
+      if (state.comp._wt > 0.13){ state.comp._wt = 0; state.comp.walkFrame = state.comp.walkFrame===1?2:1; }
+    } else state.comp.walkFrame = 0;
+  }
+  state.comp.y = GROUND_Y;
+}
+function updateCompanionIdle() {
+  if (state.comp) { state.comp.walkFrame = 0; state.comp.y = GROUND_Y; }
+}
+
+// ---- Plane takeoff (level 2) ----
+function updateTakeoff(dt) {
+  const p = state.plane;
+  p.t += dt;
+  if (p.phase === 0) {
+    // brief pause, Golsa "boards"
+    if (p.t > 1.0) { p.phase = 1; p.t = 0; }
+  } else if (p.phase === 1) {
+    // taxi
+    p.vx += 30 * dt;
+    p.x += p.vx * dt;
+    if (p.x > state.px + 260) { p.phase = 2; }
+  } else if (p.phase === 2) {
+    // take off, rise
+    p.vx += 60 * dt;
+    p.x += p.vx * dt;
+    p.y -= 90 * dt;
+    if (p.x - state.camX > VW + 200) {
+      state.planeStage = 3;
+      p.phase = 3; p.t = 0;
+      // Rojina alone, looking up
+      Dialogue.start([
+        { who:'narr',   text:"The plane climbs into the clouds and disappears." },
+        { who:'rojina', text:"...Come back soon, Chungus. I'll be right here." },
+      ], () => { nextLevel(); });
+    }
+  }
+  // player (golsa) is "on the plane" - hide handled in render
+}
+
+// ---- Plane landing (level 3) ----
+function startLanding() {
+  state.planeStage = 1;
+  state.plane = { x: state.camX + VW + 200, y: GROUND_Y - 200, vx: -220, phase: 0, t: 0 };
+  if (state.track !== 'happy') { state.track='happy'; Audio.play('happy'); }
+}
+function updateLanding(dt) {
+  const p = state.plane;
+  p.t += dt;
+  if (p.phase === 0) {
+    // descend from right toward runway near player
+    p.x += p.vx * dt;
+    const targetX = state.px + 200;
+    if (p.y < GROUND_Y - 40) p.y += 80 * dt;
+    if (p.x <= targetX) { p.x = targetX; p.phase = 1; p.t = 0; p.y = GROUND_Y - 40; }
+  } else if (p.phase === 1) {
+    // Golsa walks off -> becomes companion
+    if (p.t > 0.8) {
+      state.comp = { who:'golsa', x: p.x - 10, y: GROUND_Y, dir: -1, walkFrame: 1 };
+      p.phase = 2; p.t = 0;
+    }
+  } else if (p.phase === 2) {
+    // golsa walks toward rojina
+    if (state.comp.x > state.px + 46) {
+      state.comp.x -= 70 * dt;
+      state.comp.dir = -1;
+      state.comp._wt = (state.comp._wt||0)+dt;
+      if (state.comp._wt>0.13){state.comp._wt=0;state.comp.walkFrame=state.comp.walkFrame===1?2:1;}
+    } else {
+      state.comp.walkFrame = 0;
+      state.planeStage = 3;
+      Dialogue.start(level.dialogueMeet, () => {
+        // ending
+        spawnConfetti();
+        Audio.sfxHeart();
+        state.goalReached = true;
+        setTimeout(()=>{ state.scene='ending'; state.endTimer=0; }, 100);
+      });
+    }
+  }
+}
+
+/* ---------- confetti / hearts ---------- */
+function spawnConfetti() {
+  state.confetti = [];
+  const colors = ['#ff5d8f','#ffd34d','#5ad1ff','#7dff8a','#c98bff','#ff8a5a'];
+  for (let i=0;i<120;i++){
+    state.confetti.push({
+      x: Math.random()*VW, y: Math.random()*-VH,
+      vx: (Math.random()-0.5)*60, vy: 60+Math.random()*120,
+      s: 4+Math.random()*6, c: colors[(Math.random()*colors.length)|0],
+      heart: Math.random()<0.3, rot: Math.random()*7
+    });
+  }
+}
+function updateConfetti(dt) {
+  for (const c of state.confetti) {
+    c.x += c.vx*dt; c.y += c.vy*dt; c.rot += dt*3;
+    if (c.y > VH + 20) { c.y = -10; c.x = Math.random()*VW; }
+  }
+}
+function drawHeart(x,y,s,color){
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y+s*0.3);
+  ctx.bezierCurveTo(x, y, x-s*0.5, y, x-s*0.5, y+s*0.3);
+  ctx.bezierCurveTo(x-s*0.5, y+s*0.6, x, y+s*0.8, x, y+s);
+  ctx.bezierCurveTo(x, y+s*0.8, x+s*0.5, y+s*0.6, x+s*0.5, y+s*0.3);
+  ctx.bezierCurveTo(x+s*0.5, y, x, y, x, y+s*0.3);
+  ctx.fill();
+}
+
+/* ---------- 10. Render ---------- */
+function drawSky(theme) {
+  let g;
+  if (theme === 'airport') {
+    g = ctx.createLinearGradient(0,0,0,VH);
+    g.addColorStop(0,'#ffd9a0'); g.addColorStop(0.5,'#ffb3c8'); g.addColorStop(1,'#c98bd0');
+  } else if (theme === 'city') {
+    g = ctx.createLinearGradient(0,0,0,VH);
+    g.addColorStop(0,'#8fd0ff'); g.addColorStop(1,'#dff3ff');
+  } else {
+    g = ctx.createLinearGradient(0,0,0,VH);
+    g.addColorStop(0,'#7ec6f0'); g.addColorStop(1,'#cdefff');
+  }
+  ctx.fillStyle = g; ctx.fillRect(0,0,VW,VH);
+}
+
+function drawBackground() {
+  const cam = state.camX;
+  drawSky(level.theme);
+
+  // parallax clouds
+  for (let i=0;i<6;i++){
+    const cx = ((i*380 - cam*0.3) % (VW+400)) ;
+    const x = cx < -100 ? cx + VW + 400 : cx;
+    drawCloud(x, 60 + (i%3)*34, 1 + (i%2)*0.4);
+  }
+
+  // distant hills / buildings depending on theme
+  if (level.theme === 'city') {
+    for (let i=0;i<14;i++){
+      const bx = (i*150 - cam*0.5);
+      const x = ((bx % (14*150)) + 14*150) % (14*150);
+      const h = 80 + (i*53%110);
+      ctx.fillStyle = i%2? '#b7c4d6':'#a6b6cc';
+      ctx.fillRect(x, GROUND_Y - h, 90, h);
+      ctx.fillStyle='rgba(255,255,220,0.6)';
+      for(let wy=0;wy<h-20;wy+=22) for(let wx=0;wx<70;wx+=22) ctx.fillRect(x+10+wx, GROUND_Y-h+12+wy, 10,12);
+    }
+  } else if (level.theme === 'airport') {
+    // terminal + control tower silhouettes
+    ctx.fillStyle = '#9fb0c8';
+    ctx.fillRect(-cam*0.5 + 200, GROUND_Y-120, 400, 120);
+    ctx.fillRect(-cam*0.5 + 700, GROUND_Y-200, 60, 200);
+    ctx.fillStyle='#c9d6e8'; ctx.fillRect(-cam*0.5+690, GROUND_Y-210, 80, 40);
+  } else {
+    // school: rolling green hills
+    ctx.fillStyle = '#5fb35f';
+    for (let i=0;i<8;i++){
+      const hx = (i*320 - cam*0.5);
+      const x = ((hx % (8*320)) + 8*320) % (8*320);
+      ctx.beginPath(); ctx.arc(x, GROUND_Y+40, 160, Math.PI, 0); ctx.fill();
+    }
+  }
+}
+
+function drawGroundAndScenery() {
+  const cam = state.camX;
+  ctx.save();
+  ctx.translate(-cam, 0);
+
+  // ground strip
+  if (level.theme === 'city' || level.theme === 'airport') {
+    ctx.fillStyle = '#7d7d86'; ctx.fillRect(0, GROUND_Y, level.width, VH-GROUND_Y);
+    ctx.fillStyle = '#6a6a73'; ctx.fillRect(0, GROUND_Y, level.width, 6);
+    // runway/road dashes
+    ctx.fillStyle = '#e9e36a';
+    for (let x=20;x<level.width;x+=90) ctx.fillRect(x, GROUND_Y+30, 46, 6);
+  } else {
+    ctx.fillStyle = '#7a4a24'; ctx.fillRect(0, GROUND_Y, level.width, VH-GROUND_Y);
+    ctx.fillStyle = '#4fbb52'; ctx.fillRect(0, GROUND_Y-8, level.width, 14);
+    ctx.fillStyle = '#43a848'; for (let x=0;x<level.width;x+=12) ctx.fillRect(x, GROUND_Y-8, 6, 4);
+  }
+
+  // theme scenery
+  if (level.theme === 'school') {
+    // schoolhouse near start
+    drawSchool(300, GROUND_Y);
+    for (let x=140;x<level.width;x+=260) drawTree(x+ (x%3)*20, GROUND_Y);
+    const fc = ['#ff6d9c','#ffd34d','#7db8ff','#c98bff'];
+    for (let x=90;x<level.width;x+=70) drawFlower(x, GROUND_Y-6, fc[(x/70|0)%4]);
+    for (let x=200;x<level.width;x+=340) drawBush(x, GROUND_Y-2);
+  } else if (level.theme === 'city') {
+    drawRestaurant(level.foodX, GROUND_Y);
+    if (level.airport) drawTerminal(level.meetX + 60, GROUND_Y);
+    for (let x=140;x<level.width;x+=300) drawTree(x, GROUND_Y);
+  } else if (level.theme === 'airport') {
+    drawTerminal(360, GROUND_Y);
+    drawTerminal(900, GROUND_Y);
+  }
+
+  // platforms
+  for (const p of level.platforms) {
+    ctx.fillStyle = '#b5773f';
+    roundRect(p.x, p.y, p.w, p.h, 4, true, false);
+    ctx.fillStyle = '#4fbb52'; ctx.fillRect(p.x, p.y, p.w, 5);
+  }
+
+  // goal marker (bell / doors / sign) — light beacon
+  if (level.id === 1) drawBell(level.goalX, GROUND_Y);
+
+  // ---- plane ----
+  if (state.plane) drawPlane(state.plane.x, state.plane.y, level.landing ? -1 : 1);
+
+  // ---- characters ----
+  // NPC (unmet)
+  if (level.npc && !state.metNPC) {
+    const bob = Math.sin(performance.now()/400)*2;
+    drawChar(level.npc.who, level.npc.x, GROUND_Y+bob, level.npc.dir, 0);
+    // "!" bubble
+    ctx.fillStyle='#fff'; ctx.strokeStyle='#333'; ctx.lineWidth=2;
+    roundRect(level.npc.x-8, GROUND_Y-84, 18, 22, 4, true, true);
+    ctx.fillStyle='#e0447a'; ctx.font='bold 18px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('!', level.npc.x+1, GROUND_Y-72);
+  }
+
+  // companion
+  if (state.comp) drawChar(state.comp.who, state.comp.x, state.comp.y, state.comp.dir, state.comp.walkFrame);
+
+  // player (hidden while boarded on plane in L2 takeoff phase>=1, shown otherwise)
+  const hidePlayer = (level.plane && state.planeStage >= 1) || (level.landing && state.planeStage < 3 && state.comp && state.comp.who==='golsa'===false && false);
+  if (!(level.plane && state.planeStage >= 1)) {
+    // in level 3 the player is Rojina waiting; always show
+    drawChar(level.player, state.px, state.py, state.dir, state.walkFrame);
+  }
+
+  ctx.restore();
+}
+
+function drawSchool(x, gy){
+  ctx.fillStyle='#e8c07a'; ctx.fillRect(x-70, gy-120, 160, 120);
+  ctx.fillStyle='#b3542f'; ctx.beginPath(); ctx.moveTo(x-84,gy-118); ctx.lineTo(x, gy-170); ctx.lineTo(x+104, gy-118); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#6a3d1f'; ctx.fillRect(x-14, gy-56, 34, 56); // door
+  ctx.fillStyle='#bfe6ff'; ctx.fillRect(x-56, gy-96, 30, 30); ctx.fillRect(x+30, gy-96, 30, 30);
+  ctx.fillStyle='#fff'; ctx.font='bold 12px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#5a3a1a'; ctx.fillText('PERSIAN SCHOOL', x+3, gy-132);
+  // flag
+  ctx.fillStyle='#7a4a24'; ctx.fillRect(x-2, gy-210, 4, 44);
+  ctx.fillStyle='#3fa34d'; ctx.fillRect(x+2, gy-210, 26, 16);
+}
+function drawRestaurant(x, gy){
+  ctx.fillStyle='#ffd15a'; ctx.fillRect(x-60, gy-110, 130, 110);
+  ctx.fillStyle='#e0447a'; ctx.fillRect(x-70, gy-130, 150, 24);
+  ctx.fillStyle='#fff'; ctx.font='bold 13px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('BURGERS', x+5, gy-118);
+  ctx.fillStyle='#7a3d1f'; ctx.fillRect(x-8, gy-52, 30, 52);
+  ctx.fillStyle='#bfe6ff'; ctx.fillRect(x-52, gy-92, 34, 34);
+  // little burger icon
+  ctx.fillStyle='#c98a4a'; ctx.fillRect(x+34, gy-92, 26, 10);
+  ctx.fillStyle='#6a4a2a'; ctx.fillRect(x+34, gy-82, 26, 8);
+  ctx.fillStyle='#c98a4a'; ctx.fillRect(x+34, gy-74, 26, 8);
+}
+function drawTerminal(x, gy){
+  ctx.fillStyle='#cfe0f0'; ctx.fillRect(x-120, gy-150, 260, 150);
+  ctx.fillStyle='#8fb0d0'; ctx.fillRect(x-120, gy-150, 260, 20);
+  ctx.fillStyle='#6f90b0'; ctx.font='bold 13px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#33506e'; ctx.fillText('✈ AIRPORT', x+10, gy-140);
+  // glass doors
+  ctx.fillStyle='#9fd0e8'; ctx.fillRect(x-30, gy-70, 70, 70);
+  ctx.fillStyle='#7fb8d8'; ctx.fillRect(x+3, gy-70, 4, 70);
+  // windows
+  ctx.fillStyle='#bfe6ff';
+  for(let wx=-110;wx<120;wx+=40) if(wx< -40 || wx>50) ctx.fillRect(x+wx, gy-110, 26, 30);
+}
+function drawBell(x, gy){
+  ctx.fillStyle='#7a4a24'; ctx.fillRect(x-4, gy-120, 8, 120);
+  ctx.fillStyle='#d9a441'; ctx.beginPath(); ctx.arc(x, gy-124, 20, Math.PI, 0); ctx.fill();
+  ctx.fillRect(x-20, gy-124, 40, 20);
+  ctx.fillStyle='#8a5a1a'; ctx.beginPath(); ctx.arc(x, gy-104, 6, 0, 7); ctx.fill();
+}
+function drawPlane(x, y, dir){
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(dir, 1);
+  // body
+  ctx.fillStyle='#eef2f7';
+  roundRect(-70, -18, 140, 34, 16, true, false);
+  ctx.fillStyle='#d7dee8'; roundRect(-70,-18,140,10,8,true,false);
+  // nose
+  ctx.fillStyle='#eef2f7'; ctx.beginPath(); ctx.moveTo(70,-14); ctx.lineTo(96,0); ctx.lineTo(70,14); ctx.closePath(); ctx.fill();
+  // tail
+  ctx.fillStyle='#4a90d9'; ctx.beginPath(); ctx.moveTo(-70,-16); ctx.lineTo(-92,-40); ctx.lineTo(-64,-16); ctx.closePath(); ctx.fill();
+  // wing
+  ctx.fillStyle='#c3ccd8'; ctx.beginPath(); ctx.moveTo(-6,10); ctx.lineTo(30,40); ctx.lineTo(-30,14); ctx.closePath(); ctx.fill();
+  // windows
+  ctx.fillStyle='#7fc3e8';
+  for(let i=-52;i<=44;i+=16) { ctx.beginPath(); ctx.arc(i, -2, 4, 0, 7); ctx.fill(); }
+  // stripe
+  ctx.fillStyle='#e0447a'; ctx.fillRect(-70,2,140,5);
+  ctx.restore();
+}
+
+function drawHUD() {
+  // level indicator top-left
+  ctx.fillStyle='rgba(20,14,26,0.5)';
+  roundRect(12,10,168,30,8,true,false);
+  ctx.fillStyle='#fff'; ctx.font='bold 15px "Courier New", monospace';
+  ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillText(`Level ${level.id}: ${level.subtitle}`, 22, 26);
+}
+
+function drawTitle() {
+  drawSky('school');
+  // clouds
+  drawCloud(140, 90, 1.4); drawCloud(560, 70, 1.1); drawCloud(360, 150, 0.9);
+  // ground
+  ctx.fillStyle='#7a4a24'; ctx.fillRect(0, GROUND_Y, VW, VH-GROUND_Y);
+  ctx.fillStyle='#4fbb52'; ctx.fillRect(0, GROUND_Y-8, VW, 14);
+  drawTree(120, GROUND_Y); drawTree(680, GROUND_Y);
+  const fc=['#ff6d9c','#ffd34d','#7db8ff','#c98bff'];
+  for (let x=40;x<VW;x+=64) drawFlower(x, GROUND_Y-6, fc[(x/64|0)%4]);
+
+  // characters waving
+  const bob = Math.sin(performance.now()/350)*3;
+  drawGolsa(320, GROUND_Y+bob, 1, 0, 2.6);
+  drawRojina(480, GROUND_Y-bob, -1, 0, 2.6);
+  // heart between them
+  drawHeart(400, 150 + Math.sin(performance.now()/500)*6, 26, '#ff5d8f');
+
+  // title text (chunky)
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const cx = VW/2;
+  drawChunkyText('CHUNGUS', cx, 90, 46, '#ffe14d', '#3a2a1a');
+  drawChunkyText('and the', cx, 132, 22, '#fff', '#3a2a1a');
+  drawChunkyText('CHUNGOOS', cx, 176, 46, '#ff8ac0', '#3a2a1a');
+
+  // prompt
+  if (Math.floor(performance.now()/500)%2===0){
+    ctx.fillStyle='#fff'; ctx.font='bold 22px "Courier New", monospace';
+    ctx.fillText(isTouch ? 'Tap to Begin' : 'Press Space to Start', cx, 250);
+  }
+  ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.font='14px "Courier New", monospace';
+  ctx.fillText('a story about two best friends', cx, 286);
+}
+
+function drawChunkyText(text, x, y, size, fill, outline){
+  ctx.font = `bold ${size}px "Courier New", monospace`;
+  ctx.lineJoin='round';
+  ctx.lineWidth = size*0.22;
+  ctx.strokeStyle = outline; ctx.strokeText(text, x, y);
+  ctx.fillStyle = fill; ctx.fillText(text, x, y);
+}
+
+function drawLevelCard() {
+  const i = state.pendingLevel;
+  const lv = Levels[i];
+  ctx.fillStyle = '#161226'; ctx.fillRect(0,0,VW,VH);
+  // subtle sparkle
+  ctx.fillStyle='rgba(255,255,255,0.08)';
+  for(let k=0;k<40;k++){ const sx=(k*97+performance.now()/40)%VW; ctx.fillRect(sx, (k*53)%VH, 2,2); }
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  drawChunkyText(`LEVEL ${lv.id}`, VW/2, VH/2 - 34, 40, '#ffe14d', '#3a2a1a');
+  drawChunkyText(lv.subtitle, VW/2, VH/2 + 20, 30, '#ff8ac0', '#3a2a1a');
+  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='14px "Courier New", monospace';
+  ctx.fillText(isTouch?'tap to continue':'press space', VW/2, VH/2 + 70);
+}
+
+function drawEnding() {
+  drawSky('airport');
+  drawCloud(160, 80, 1.3); drawCloud(600, 60, 1.0);
+  ctx.fillStyle='#7d7d86'; ctx.fillRect(0, GROUND_Y, VW, VH-GROUND_Y);
+  ctx.fillStyle='#6a6a73'; ctx.fillRect(0, GROUND_Y, VW, 6);
+  drawTerminal(560, GROUND_Y);
+
+  // the two friends together, close, little bob
+  const bob = Math.sin(performance.now()/400)*2;
+  drawGolsa(VW/2 - 34, GROUND_Y+bob, 1, 0, 2.4);
+  drawRojina(VW/2 + 34, GROUND_Y-bob, -1, 0, 2.4);
+  // hearts floating between
+  for(let k=0;k<3;k++){
+    const t=performance.now()/600 + k*2;
+    drawHeart(VW/2 + Math.sin(t)*20, 150 - (t*20)%120, 16, ['#ff5d8f','#ffd34d','#ff8ac0'][k]);
+  }
+
+  // confetti
+  for (const c of state.confetti) {
+    if (c.heart) drawHeart(c.x, c.y, c.s*1.6, c.c);
+    else { ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.rot); ctx.fillStyle=c.c; ctx.fillRect(-c.s/2,-c.s/2,c.s,c.s); ctx.restore(); }
+  }
+
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  drawChunkyText('THE END', VW/2, 90, 48, '#ffe14d', '#3a2a1a');
+  drawChunkyText('Best Friends Forever', VW/2, 140, 24, '#ff8ac0', '#3a2a1a');
+
+  if (state.endTimer > 1.2 && Math.floor(performance.now()/500)%2===0){
+    ctx.fillStyle='#fff'; ctx.font='16px "Courier New", monospace';
+    ctx.fillText(isTouch?'tap to play again':'press space to play again', VW/2, VH-40);
+  }
+}
+
+function render() {
+  ctx.clearRect(0,0,VW,VH);
+  if (state.scene === 'title') { drawTitle(); return; }
+  if (state.scene === 'levelcard') { drawLevelCard(); return; }
+  if (state.scene === 'ending') { drawEnding(); return; }
+
+  // play
+  drawBackground();
+  drawGroundAndScenery();
+  drawHUD();
+  Dialogue.render();
+
+  // gentle "walk right" hint arrow when idle at start of a level
+  if (!Dialogue.active && !state.metNPC && state.px < level.startX + 120 && Math.floor(performance.now()/500)%2===0){
+    ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.textAlign='center';
+    ctx.font='bold 26px monospace';
+    ctx.fillText('→', state.px - state.camX + 60, state.py - 70);
+  }
+}
+
+/* ---------- 11. Main loop ---------- */
+let last = performance.now();
+function frame(now) {
+  let dt = (now - last) / 1000;
+  last = now;
+  if (dt > 0.05) dt = 0.05; // clamp
+
+  // landing sequence (level 3) advances even though planeStage set
+  if (state.scene === 'play' && level.landing && state.planeStage >= 1 && state.planeStage < 3 && !Dialogue.active) {
+    updateLanding(dt);
+  } else {
+    update(dt);
+  }
+
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
